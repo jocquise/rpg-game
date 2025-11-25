@@ -1,0 +1,2 @@
+Player escaped in 36 actions.
+Player died from insanity after 34 actions.
