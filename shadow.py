@@ -1,7 +1,6 @@
-# shadow.py
 import random
 
-class Shadow:
+class Shadow:  # Represents the mysterious shadow entity
     def __init__(self, typewriter_func):
         self.typewriter = typewriter_func
         self.lines = [
@@ -26,6 +25,6 @@ class Shadow:
         if idx is None:
             idx = random.randint(0, len(self.lines) - 1)
         if 0 <= idx < len(self.lines):
-            # prefix with ???:
+            
             self.typewriter(f"???: \"{self.lines[idx]}\"", speed=0.03)
 

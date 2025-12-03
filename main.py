@@ -1,4 +1,9 @@
-# main.py
+#Jocquise Green
+#November 23, 2025
+#CPSC 1050
+#A text-based adventure game with sanity mechanics and shadow interactions. This program is supposed to take place in a 
+#haunted house where the player must manage their sanity while navigating rooms, collecting items, and avoiding the influence of a shadowy entity.
+
 import sys
 import time
 import random
@@ -10,156 +15,146 @@ from shadow import Shadow
 
 # ---------- Typewriter ----------
 def typewriter(text, speed=0.02):
+    # print text char-by-char to simulate a typewriter effect.
     for ch in text:
         sys.stdout.write(ch)
         sys.stdout.flush()
         time.sleep(speed)
     print()
 
-# ---------- Game State ----------
-current_room = adventure_map["Foyer"]
-inventory = Inventory()
-action_count = 0
-insanity = 100  # 0 = death
-shadow = Shadow(typewriter)
-shadow_suppressed_turns = 0
-steel_ball_used = False
-necronomicon_crafted = False
-necronomicon_read = False
+# ---------- Game State Class ----------
+class GameState:
+    def __init__(self):
+        self.current_room = adventure_map["Foyer"]        # starting room
+        self.inventory = Inventory()                     # player's inventory instance
+        self.action_count = 0                             # counts actions until victory/death
+        self.insanity = 100                               # sanity meter (100 sane -> 0 death)
+        self.shadow = Shadow(typewriter)                  # shadow entity reacting to events
+        self.shadow_suppressed_turns = 0                  # how many turns shadow is suppressed
+        self.steel_ball_used = False                      # record of steel ball use
+        self.necronomicon_read = False                    # track if read
 
-# ---------- Helper utilities ----------
+# ---------- Helpers ----------
 def write_log(line):
+    """Append a single line to gamelog.txt"""
     with open("gamelog.txt", "a") as f:
         f.write(line + "\n")
 
-def decrease_insanity(amount=5):
-    global insanity, action_count
-    insanity -= amount
-    if insanity <= 0:
-        insanity = 0
+def decrease_insanity(game_state, amount=5):
+    """Decrease sanity; if reaches 0, the player dies."""
+    game_state.insanity -= amount                              # reduce sanity
+    if game_state.insanity <= 0:                               # check if insane
+        game_state.insanity = 0
         typewriter("\nYour mind fractures. Madness consumes you.", speed=0.03)
-        write_log(f"Player died from insanity after {action_count} actions.")
-        sys.exit()
+        write_log(f"Player died from insanity after {game_state.action_count} actions.")
+        sys.exit()                                             # end game
 
-def increase_insanity(amount=10):
-    global insanity
-    insanity += amount
-    if insanity > 100:
-        insanity = 100
+def increase_insanity(game_state, amount=10):
+    """Increase sanity (cap at 100)."""
+    game_state.insanity += amount
+    if game_state.insanity > 100:
+        game_state.insanity = 100                               # cap sanity
 
-def update_room_description():
-    global current_room, insanity
-    if insanity > 70:
-        typewriter(f"[Sane] {current_room.description}", speed=0.03)
-    elif insanity > 40:
-        typewriter(f"[Shaken] {current_room.description}", speed=0.035)
-    elif insanity > 10:
+def update_room_description(game_state):
+    """Show a room description modified by current sanity state."""
+    if game_state.insanity > 70:
+        typewriter(f"[Sane] {game_state.current_room.description}", speed=0.03)
+    elif game_state.insanity > 40:
+        typewriter(f"[Shaken] {game_state.current_room.description}", speed=0.035)
+    elif game_state.insanity > 10:
         typewriter(f"[Distorted] Shadows twitch at the edges of your vision.", speed=0.03)
-        typewriter(current_room.description, speed=0.03)
+        typewriter(game_state.current_room.description, speed=0.03)
     else:
         typewriter(f"[Unraveling] Your perception thins; details bleed together.", speed=0.02)
-        typewriter(current_room.description, speed=0.02)
+        typewriter(game_state.current_room.description, speed=0.02)
 
-# ---------- Shadow events ----------
-def random_shadow_event():
-    global insanity, shadow_suppressed_turns
-    if shadow_suppressed_turns > 0:
-        # suppressed, decrement and skip
-        shadow_suppressed_turns -= 1
+# ---------- Shadow random events ----------
+def random_shadow_event(game_state):
+    # occasionally trigger a shadow whisper and decrease sanity unless suppressed.
+    if game_state.shadow_suppressed_turns > 0:
+        game_state.shadow_suppressed_turns -= 1                   # decrement suppression turns
         return
-
-    # 15% chance per action for an event
-    if random.randint(1, 100) <= 15:
-        decrease_insanity(5)
-        # pick line based on insanity tiers
-        if insanity > 70:
+    if random.randint(1, 100) <= 15:                             # 15% chance per turn
+        decrease_insanity(game_state, 5)                         # sanity loss
+        # choose a line index based on current sanity tier for variety
+        if game_state.insanity > 70:
             idx = 0
-        elif insanity > 50:
+        elif game_state.insanity > 50:
             idx = 1
-        elif insanity > 30:
+        elif game_state.insanity > 30:
             idx = 2
-        elif insanity > 15:
+        elif game_state.insanity > 15:
             idx = 3
         else:
             idx = 4
-        shadow.speak(idx)
+        game_state.shadow.speak(idx)                             # shadow reacts
 
-# ---------- Item effect helper ----------
-def use_item_effect(item):
-    """
-    When inspecting (using) an item, apply its effect here.
-    NOTE: 'insanity' variable is actually a sanity meter: higher = more sane.
-    'Adding insanity' in conversation means 'increase madness' -> implemented as decrease_insanity().
-    """
-    global shadow_suppressed_turns, steel_ball_used, necronomicon_read
-
+# ---------- Item usage effects ----------
+def use_item_effect(game_state, item):
+    
+    # apply effects when an item is used/inspected/read/played.
+    # (Higher 'insanity' value = more sane. decrease_insanity means losing sanity.)
+   
     name = item.name.lower()
 
-    # Umbra's Echo: clarity (increase sanity)
     if name == "umbra's echo":
-        increase_insanity(20)
+        increase_insanity(game_state, 20)
         typewriter("A cold clarity washes over you; the echo steadies your thoughts.", speed=0.03)
         return
 
-    # Perfect Rotating Steel Ball: suppress shadows & boost sanity (consumed)
     if name == "perfect rotating steel ball":
-        shadow_suppressed_turns = 3
-        increase_insanity(25)
-        steel_ball_used = True
+        game_state.shadow_suppressed_turns = 5
+        decrease_insanity(game_state, 40)
+        game_state.steel_ball_used = True
         typewriter("The sphere hums and spins; reality lines up for a single breath.", speed=0.03)
-        typewriter("Shadows falter; you feel steadier.", speed=0.03)
-        inventory.remove(item.name)
+        game_state.inventory.remove(item.name)
         return
 
-    # Phoenix's Soul Fire: dangerous — scorches sanity (consumed)
     if name == "phoenix's soul fire":
-        decrease_insanity(15)
+        decrease_insanity(game_state, 15)
         typewriter("The ember scorches memory from your skull. You feel hollow and shaky.", speed=0.03)
-        inventory.remove(item.name)
+        game_state.inventory.remove(item.name)
         return
 
-    # Necronomicon: READING it causes madness (use triggers same)
     if name == "necronomicon":
-        penalty = random.randint(15, 30)
-        decrease_insanity(penalty)
-        necronomicon_read = True
+        penalty = random.randint(20, 35)
+        decrease_insanity(game_state, penalty)
+        game_state.necronomicon_read = True
         typewriter("Words crawl and bite; something inside rejoices.", speed=0.03)
-        # Shadow reacts strongly
-        shadow.speak(idx=random.randint(12, 14))
+        game_state.shadow.speak(idx=random.randint(12, 14))
         return
 
-    # Holy Ankh: major sanity increase
     if name == "holy ankh":
-        increase_insanity(40)
+        increase_insanity(game_state, 40)
         typewriter("A calm like dawn spreads through your mind.", speed=0.03)
         return
 
-    # Burning Light Dagger: minor clarity (not consumed)
     if name == "burning light dagger":
-        increase_insanity(5)
+        increase_insanity(game_state, 5)
         typewriter("The blade warms your thoughts; a faint order returns.", speed=0.03)
         return
 
-    # Retribution's Dying Light: small boost (lore item)
     if name == "retribution's dying light":
-        increase_insanity(10)
+        increase_insanity(game_state, 10)
         typewriter("The shard hums. For a moment justice feels near.", speed=0.03)
         return
 
-    # Default: no mechanical effect
+    # default statement for items without specific effects
     typewriter("You examine it closely but nothing immediate happens.", speed=0.03)
 
-# ---------- Actions ----------
-def look_around():
-    typewriter(current_room.description, speed=0.03)
-    if current_room.items:
-        names = ", ".join([item.name for item in current_room.items])
+# ---------- Player Actions ----------
+def look_around(game_state):
+    """Show the room description and list items (comma-separated if multiple)."""
+    typewriter(game_state.current_room.description, speed=0.03)
+    if game_state.current_room.items:
+        names = ", ".join([it.name for it in game_state.current_room.items])
         typewriter(f"You find some items around you: {names}", speed=0.03)
     else:
         typewriter("There are no items here.", speed=0.03)
 
-def show_inventory():
-    items = inventory.list_items()
+def show_inventory(game_state):
+    """List items in inventory with descriptions."""
+    items = game_state.inventory.list_items()
     if not items:
         typewriter("Inventory is empty.", speed=0.03)
         return
@@ -167,63 +162,31 @@ def show_inventory():
     for name, desc in items:
         typewriter(f"- {name}: {desc}", speed=0.02)
 
-def pickup():
-    if not current_room.items:
-        # autograder-expected typo preserved
-        typewriter("There are not items to pick up.", speed=0.03)
-        return
+def pickup(game_state):
 
-    # Show numbered list and allow name/number selection
-    typewriter("Which item do you want to pick up?", speed=0.02)
-    for i, it in enumerate(current_room.items, 1):
-        typewriter(f"{i}. {it.name}", speed=0.01)
+    if not game_state.current_room.items:
+        typewriter("There are not items to pick up.", speed=0.03)  
 
-    choice = input("Enter item number or name: ").strip()
-    selected = None
-
-    if choice.isdigit():
-        idx = int(choice) - 1
-        if 0 <= idx < len(current_room.items):
-            selected = current_room.items.pop(idx)
-    else:
-        # match by exact name (case-insensitive) or partial start
-        lower = choice.lower()
-        for it in current_room.items:
-            if it.name.lower() == lower:
-                selected = it
-                current_room.items.remove(it)
-                break
-        if selected is None:
-            for it in current_room.items:
-                if it.name.lower().startswith(lower):
-                    selected = it
-                    current_room.items.remove(it)
-                    break
-
-    if not selected:
-        typewriter("That item doesn't exist.", speed=0.03)
-        return
-
-    inventory.add(selected)
+    selected = game_state.current_room.items.pop(0)                 # pick first item
+    game_state.inventory.add(selected)                              # add to inventory
     typewriter(f"You picked up: {selected.name}", speed=0.03)
 
-    # immediate effects for some items (on pickup)
+    # immediate effect for some items
     if selected.name.lower() == "phoenix's soul fire":
-        decrease_insanity(10)
+        decrease_insanity(game_state, 10)
         typewriter("The ember scorches the edges of your mind.", speed=0.03)
-        shadow.speak()
+        game_state.shadow.speak()
     if selected.name.lower() == "necronomicon":
-        shadow.speak()
+        game_state.shadow.speak()
 
-def inspect():
-    # allow inspect any inventory item by name or number; inspecting now *uses* the item (applies its effect)
-    if not inventory.items:
+def inspect(game_state):
+    """Inspect an item in inventory (player selects by number or name)."""
+    if not game_state.inventory.items:
         typewriter("I don't have anything to inspect", speed=0.03)
         return
 
-    # Show inventory with indices
-    typewriter("Which inventory item do you want to inspect/use?", speed=0.02)
-    for i, it in enumerate(inventory.items, 1):
+    typewriter("Which inventory item do you want to inspect?", speed=0.02)
+    for i, it in enumerate(game_state.inventory.items, 1):
         typewriter(f"{i}. {it.name}", speed=0.01)
 
     choice = input("Enter number or name: ").strip()
@@ -231,35 +194,28 @@ def inspect():
 
     if choice.isdigit():
         idx = int(choice) - 1
-        if 0 <= idx < len(inventory.items):
-            target = inventory.items[idx]
+        target = game_state.inventory.get_by_index(idx)
     else:
         lower = choice.lower()
-        for it in inventory.items:
-            if it.name.lower() == lower:
+        for it in game_state.inventory.items:
+            if it.name.lower() == lower or it.name.lower().startswith(lower):
                 target = it
                 break
-        if target is None:
-            for it in inventory.items:
-                if it.name.lower().startswith(lower):
-                    target = it
-                    break
 
     if not target:
         typewriter("You don't have that item.", speed=0.03)
         return
 
-    # Print inspect text (flavor) and then USE it (apply effect)
     typewriter(f"Inspecting {target.name}: {target.inspect_text}", speed=0.03)
-    use_item_effect(target)
+    use_item_effect(game_state, target)                           # inspect applies item effect
 
-def read():
-    global necronomicon_read
-    # choose which readable inventory item to read
-    readable_items = [it for it in inventory.items if it.readable and it.content]
+
+def read(game_state):
+    # read a readable item from inventory; apply effects.
+    readable_items = [it for it in game_state.inventory.items if it.readable and it.content]
     if not readable_items:
         typewriter("I don't have anything to read", speed=0.03)
-        return
+        return # exits the function early and prevents further code execution.
 
     typewriter("Which item do you want to read?", speed=0.02)
     for i, it in enumerate(readable_items, 1):
@@ -275,58 +231,32 @@ def read():
     else:
         lower = choice.lower()
         for it in readable_items:
-            if it.name.lower() == lower:
+            if it.name.lower() == lower or it.name.lower().startswith(lower):
                 target = it
                 break
-        if target is None:
-            for it in readable_items:
-                if it.name.lower().startswith(lower):
-                    target = it
-                    break
 
     if not target:
         typewriter("You don't have that item.", speed=0.03)
         return
 
-    # display content
     typewriter(f"You read {target.name}:", speed=0.03)
     typewriter(target.content, speed=0.02)
+    use_item_effect(game_state, target)                            # reading triggers effect
 
-    # reading effects: same semantics as inspect/use
-    if target.name.lower() == "umbra's echo":
-        increase_insanity(20)
-        typewriter("Umbra's Echo steadies your thoughts.", speed=0.03)
-    elif target.name.lower() == "holy ankh":
-        increase_insanity(40)
-        typewriter("The Holy Ankh floods your mind with clarity.", speed=0.03)
-        shadow.speak()
-    elif target.name.lower() == "necronomicon":
-        # Dangerous: reading steals sanity randomly and triggers shadow lines
-        penalty = random.randint(15, 30)
-        decrease_insanity(penalty)   # reading NECRONOMICON increases madness (sanity drops)
-        necronomicon_read = True
-        typewriter("The Necronomicon tears at your mind; you feel pieces fall away.", speed=0.03)
-        # Shadow responds with book-specific lines
-        shadow.speak(idx=random.randint(12, 14))
-    else:
-        # normal books are straining
-        decrease_insanity(5)
-        shadow.speak()
 
-def play():
-    # play usable items like Perfect Rotating Steel Ball
-    playable_items = [it for it in inventory.items if it.playable]
+def play(game_state):
+    # use/play a playable item from inventory; apply effects.
+    playable_items = [it for it in game_state.inventory.items if it.playable]
     if not playable_items:
         typewriter("I don't have anything to play", speed=0.03)
         return
 
     typewriter("Which item do you want to use/play?", speed=0.02)
-    for i, it in enumerate(playable_items, 1):
+    for i, it in enumerate(playable_items, 1): # display playable items
         typewriter(f"{i}. {it.name}", speed=0.01)
 
     choice = input("Enter number or name: ").strip()
     target = None
-
     if choice.isdigit():
         idx = int(choice) - 1
         if 0 <= idx < len(playable_items):
@@ -334,149 +264,121 @@ def play():
     else:
         lower = choice.lower()
         for it in playable_items:
-            if it.name.lower() == lower:
+            if it.name.lower() == lower or it.name.lower().startswith(lower):
                 target = it
                 break
-        if target is None:
-            for it in playable_items:
-                if it.name.lower().startswith(lower):
-                    target = it
-                    break
 
     if not target:
         typewriter("You don't have that item", speed=0.03)
         return
 
-    # Effects (mirror of use_item_effect for playable)
-    global shadow_suppressed_turns, steel_ball_used
-    if target.name.lower() == "perfect rotating steel ball":
-        shadow_suppressed_turns = 3
-        increase_insanity(25)
-        steel_ball_used = True
-        typewriter("The Perfect Rotating Steel Ball hums and spins. The world lines up for a breath.", speed=0.03)
-        typewriter("Shadows falter; you feel steadier.", speed=0.03)
-        inventory.remove("Perfect Rotating Steel Ball")
-    elif target.name.lower() == "phoenix's soul fire":
-        decrease_insanity(20)
-        typewriter("The Phoenix's Soul Fire burns through your thoughts. You feel reborn... and hollow.", speed=0.03)
-        inventory.remove("Phoenix's Soul Fire")
-    else:
-        typewriter(f"You use the {target.name}, but nothing remarkable happens.", speed=0.03)
+    use_item_effect(game_state, target)                            # playing triggers effect
 
-def unlock():
-    # unlocking the trap door requires: Skeleton Key + sanity >=25 + (holy ankh or used steel ball or read necronomicon)
-    if current_room.name != "Bedroom":
+
+def unlock(game_state):
+    # unlock action (Bedroom + Skeleton Key = victory).
+    if game_state.current_room.name != "Bedroom":
         typewriter("I don't have anything to unlock", speed=0.03)
         return
 
-    if not inventory.has("Skeleton Key"):
+    if not game_state.inventory.has("Skeleton Key"):
         typewriter("I don't have anything to unlock", speed=0.03)
         return
 
-    if insanity < 25:
-        typewriter("Your mind is too frayed. You can't find the true mechanism of the trap door.", speed=0.03)
-        return
+    # player has the key in bedroom = escape success
+    write_log(f"Player escaped in {game_state.action_count} actions.")
+    typewriter("You use the Skeleton Key. The trap door clicks open.", speed=0.03)
+    typewriter("You climb through the trap door and taste cold air. You escape.", speed=0.03)
+    sys.exit()
 
-    # check additional requirement
-    if inventory.has("Holy Ankh") or steel_ball_used or necronomicon_read:
-        typewriter("You use the Skeleton Key. The trap door clicks open.", speed=0.03)
-        write_log(f"Player escaped in {action_count} actions.")
-        typewriter("You climb through the trap door and taste cold air. You escape.", speed=0.03)
-        sys.exit()
-    else:
-        typewriter("Something resists the opening. The house will not let you go yet.", speed=0.03)
-        # final confrontation - shadow may punish you
-        shadow.speak()
-        decrease_insanity(20)
 
-def move():
-    global current_room
-    if not current_room.exits:
+def move(game_state):
+    # move/exit command: allow player to choose an exit."""
+    if not game_state.current_room.exits:
         typewriter("There are no exits here.", speed=0.03)
         return
 
-    typewriter("Exits: " + ", ".join(current_room.exits.keys()), speed=0.02)
+    typewriter("Exits: " + ", ".join(game_state.current_room.exits.keys()), speed=0.02)
     dest = input("Where do you want to go? ").strip().lower()
-    if dest not in current_room.exits:
-        raise NameError("Invalid exit")
-    new_room_name = current_room.exits[dest]
-    if new_room_name not in adventure_map:
-        raise NameError("Invalid exit")
-    current_room = adventure_map[new_room_name]
-    decrease_insanity(3)
-    update_room_description()
 
-def forge():
-    # two recipes:
-    # 1) Dead Owl + Ancient Tome -> Necronomicon (consumes both)
-    # 2) Broken Ankh + Umbra's Echo + Retribution's Dying Light -> Holy Ankh (consumes ankh + retribution)
-    if inventory.has("Dead Owl") and inventory.has("Ancient Tome") and not inventory.has("Necronomicon"):
-        # create necronomicon
-        inventory.remove("Dead Owl")
-        inventory.remove("Ancient Tome")
-        inventory.add(Item(
-            name="Necronomicon",
-            description="A flesh-bound tome inked in something too dark to be ink.",
-            readable=True,
-            content="The pages writhe under your fingers. Something ancient reads you in return.",
-            inspect_text="The binding pulses faintly; the smell is of old funerals."
-        ))
+    if dest not in game_state.current_room.exits:
+        raise NameError("Invalid exit")                         
+
+    new_room_name = game_state.current_room.exits[dest]
+    if new_room_name not in adventure_map:
+        raise NameError("Invalid exit")                         
+
+    game_state.current_room = adventure_map[new_room_name]
+    decrease_insanity(game_state, 3)                              # small sanity loss on movement
+    update_room_description(game_state)
+
+def forge(game_state):
+    #Combine items to craft powerful items.
+    if game_state.inventory.has("Dead Owl") and game_state.inventory.has("Ancient Tome") and not game_state.inventory.has("Necronomicon"):
+        game_state.inventory.remove("Dead Owl")
+        game_state.inventory.remove("Ancient Tome") 
+        game_state.inventory.add(Item("Necronomicon",
+                                      "A flesh-bound tome inked in something too dark to be ink.",
+                                      readable=True,
+                                      content="The pages writhe under your fingers. Something ancient reads you in return.",
+                                      inspect_text="The binding pulses faintly; the smell is of old funerals."))
         typewriter("You stitch the owl's remains into the ancient tome. A forbidden book forms: The Necronomicon.", speed=0.03)
         return
 
-    if inventory.has("Broken Ankh") and inventory.has("Umbra's Echo") and inventory.has("Retribution's Dying Light") and not inventory.has("Holy Ankh"):
-        inventory.remove("Broken Ankh")
-        inventory.remove("Retribution's Dying Light")
-        # Umbra's Echo remains (stabilizer)
-        inventory.add(Item(
-            name="Holy Ankh",
-            description="A restored sacred relic. Light radiates from it, steadying your mind.",
-            readable=True,
-            content="You feel clarity and strength as the Holy Ankh hums in your hands.",
-            inspect_text="The Ankh's golden shape is perfect. Its power calms your fears."
-        ))
+    if game_state.inventory.has("Broken Ankh") and game_state.inventory.has("Umbra's Echo") and game_state.inventory.has("Retribution's Dying Light") and not game_state.inventory.has("Holy Ankh"):
+        game_state.inventory.remove("Broken Ankh")
+        game_state.inventory.remove("Retribution's Dying Light")
+        
+        game_state.inventory.add(Item("Holy Ankh",
+                                      "A restored sacred relic. Light radiates from it, steadying your mind.",
+                                      readable=True,
+                                      content="You feel clarity and strength as the Holy Ankh hums in your hands.",
+                                      inspect_text="The Ankh's golden shape is perfect. Its power calms your fears."))
         typewriter("The dying light erupts, binding bone, gold, and shadow. When the brilliance fades, only the Holy Ankh remains.", speed=0.03)
         return
 
     typewriter("You don't have the required items to forge.", speed=0.03)
 
-# ---------- Game start ----------
-def game_intro():
+
+def game_intro(game_state):
+    # opening text and first room description.
     typewriter("The house exhales around you. Something watches.", speed=0.04)
-    update_room_description()
+    update_room_description(game_state)
 
-def main_loop():
-    global action_count
-    game_intro()
-
-    while True:
+def main():
+    """Main game loop. Counts actions and runs until escape or death."""
+    game_state = GameState()                                       # initialize all game state
+    game_intro(game_state)
+    playing = True
+    while playing:
         action = input("\nWhat do you want to do? (look/pickup/inspect/read/play/unlock/forge/inventory/move/quit) ").strip().lower()
-        action_count += 1
+        game_state.action_count += 1                                # increment actions
 
-        # small sanity drain per turn
-        decrease_insanity(1)
-        # shadow events (unless suppressed)
-        random_shadow_event()
+        decrease_insanity(game_state, 1)                             # small sanity drain per turn
+        try:
+            random_shadow_event(game_state)                          # possible shadow event
+        except Exception:
+            pass
 
         try:
-            if action == "look":
-                look_around()
+            if action == "look around" or action == "look":
+                look_around(game_state)
             elif action == "pickup":
-                pickup()
+                pickup(game_state)
             elif action == "inspect":
-                inspect()
+                inspect(game_state)
             elif action == "read":
-                read()
+                read(game_state)
             elif action == "play":
-                play()
+                play(game_state)
             elif action == "unlock":
-                unlock()
+                unlock(game_state)
             elif action == "forge":
-                forge()
+                forge(game_state)
             elif action == "inventory":
-                show_inventory()
-            elif action == "move":
-                move()
+                show_inventory(game_state)
+            elif action == "move" or action == "exit":
+                move(game_state)
             elif action == "quit":
                 typewriter("You back away from the house and its questions.", speed=0.03)
                 break
@@ -484,8 +386,13 @@ def main_loop():
                 typewriter("Unknown action.", speed=0.03)
         except NameError as e:
             typewriter(str(e), speed=0.03)
+        except Exception as e:
+            typewriter(f"Error: {e}", speed=0.03)
 
 if __name__ == "__main__":
-    main_loop()
+    main()
 
+'''Notes:
+Any type of interaction with items (inspect, read, play) applies the item's effect immediately.
 
+'''
